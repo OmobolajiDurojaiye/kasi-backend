@@ -1,0 +1,13 @@
+flask
+flask-cors
+mysql-connector-python
+python-dotenv
+Flask-SQLAlchemy
+flask-jwt-extended
+werkzeug
+Flask-Migrate
+pymysql
+flask-cors
+requests
+reportlab
+google-generativeai

@@ -1,0 +1,40 @@
+# Virtual environment
+venv/
+env/
+.venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+
+# Environment variables (SENSITIVE — never push)
+.env
+
+# Instance folder (local DB, configs)
+instance/
+
+# Generated files
+generated_invoices/
+*.pdf
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test files
+test_*.py
+!test_auth.py
+
+# Logs
+*.log
+
+# Distribution
+dist/
+build/
+*.egg-info/

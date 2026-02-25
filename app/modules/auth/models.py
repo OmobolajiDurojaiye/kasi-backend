@@ -1,0 +1,41 @@
+from app.extensions import db
+from werkzeug.security import generate_password_hash, check_password_hash
+from datetime import datetime
+
+class User(db.Model):
+    __tablename__ = 'users'
+
+    id = db.Column(db.Integer, primary_key=True)
+    business_name = db.Column(db.String(120), nullable=False)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    password_hash = db.Column(db.String(256))
+    
+    # Profile / Branding Fields
+    phone = db.Column(db.String(20))
+    address = db.Column(db.String(255))
+    logo_url = db.Column(db.String(255))
+    bank_name = db.Column(db.String(50))
+    account_number = db.Column(db.String(20))
+    account_name = db.Column(db.String(100))
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def set_password(self, password):
+        self.password_hash = generate_password_hash(password)
+
+    def check_password(self, password):
+        return check_password_hash(self.password_hash, password)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'email': self.email,
+            'business_name': self.business_name,
+            'phone': self.phone,
+            'address': self.address,
+            'logo_url': self.logo_url,
+            'bank_name': self.bank_name,
+            'account_number': self.account_number,
+            'account_name': self.account_name,
+            'created_at': self.created_at.isoformat()
+        }
