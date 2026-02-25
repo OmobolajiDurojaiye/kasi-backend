@@ -6,5 +6,5 @@ health_bp = Blueprint('health', __name__)
 def health_check():
     return jsonify({
         "status": "ok", 
-        "message": "FlowPay Backend is running (Modular)"
+        "message": "FlowPay Backend is running (Modular) Thank you"
     })

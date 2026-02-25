@@ -39,3 +39,5 @@ class User(db.Model):
             'account_name': self.account_name,
             'created_at': self.created_at.isoformat()
         }
+
+#just so it cna work
