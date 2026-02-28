@@ -1,7 +1,7 @@
 import sqlite3
 
 def add_admin_columns():
-    db_path = 'app.db'
+    db_path = 'kasi.db'
     
     try:
         conn = sqlite3.connect(db_path)
