@@ -4,7 +4,6 @@ from .models import Invoice, Customer, InvoiceItem
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from datetime import datetime
-from app.services.paystack_service import PaystackService
 from app.services.pdf_service import PDFService
 
 invoices_bp = Blueprint('invoices', __name__)
@@ -64,22 +63,6 @@ def create_invoice():
         new_invoice.pdf_url = pdf_url
     except Exception as e:
         print(f"Error generating PDF: {e}")
-
-    # 5. Initialize Paystack Transaction
-    if new_invoice.total_amount > 0:
-        # Get customer email or fallback to current user email (needs improvement in real app)
-        # For now, we assume customer might not have email, so we use a placeholder or user's email if available
-        # But Paystack requires email.
-        paystack_email = new_invoice.customer.email or f"customer-{new_invoice.customer.id}@bizflow.com" 
-        
-        qt_res = PaystackService.initialize_transaction(
-            email=paystack_email,
-            amount=new_invoice.total_amount,
-            reference=new_invoice.reference
-        )
-        
-        if qt_res and qt_res.get('status'):
-            new_invoice.payment_link = qt_res['data']['authorization_url']
 
     db.session.commit()
     return jsonify(new_invoice.to_dict()), 201

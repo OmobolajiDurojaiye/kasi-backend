@@ -99,4 +99,4 @@ class TelegramService:
         Delegates to the unified SalesAI engine.
         Returns a string (text reply) or a dict with 'text' and optional 'pdf_path'.
         """
-        return SalesAI.process(user_id, text, 'telegram', sender_name)
+        return SalesAI.process(user_id, text, 'telegram', sender_name, customer_id=chat_id)

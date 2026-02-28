@@ -29,6 +29,9 @@ def login():
     user = User.query.filter_by(email=data['email']).first()
     
     if user and user.check_password(data['password']):
+        if getattr(user, 'account_status', 'active') != 'active':
+            return jsonify({"message": f"Account is {user.account_status}. Please contact support."}), 403
+            
         access_token = create_access_token(identity=str(user.id))
         return jsonify({
             "access_token": access_token,
@@ -42,6 +45,13 @@ def login():
 def me():
     current_user_id = get_jwt_identity()
     user = User.query.get(current_user_id)
+    
+    if not user:
+        return jsonify({"message": "User not found"}), 404
+        
+    if getattr(user, 'account_status', 'active') != 'active':
+        return jsonify({"message": f"Account is {user.account_status}."}), 403
+        
     return jsonify(user.to_dict()), 200
 
 @auth_bp.route('/profile', methods=['PATCH'])
@@ -130,3 +140,12 @@ def upload_logo():
             return jsonify({"message": "Failed to upload to Cloudinary"}), 500
         
     return jsonify({"message": "File type not allowed"}), 400
+
+from .models import Announcement
+
+@auth_bp.route('/announcements/active', methods=['GET'])
+def get_active_announcement():
+    active = Announcement.query.filter_by(is_active=True).first()
+    if active:
+        return jsonify({"status": "success", "data": active.to_dict()}), 200
+    return jsonify({"status": "success", "data": None}), 200

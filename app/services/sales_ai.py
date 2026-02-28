@@ -11,7 +11,8 @@ with comprehensive regex fallback for Pidgin & informal language.
 import re
 from app.modules.invoices.models import Invoice, InvoiceItem, Customer
 from app.modules.products.models import Product
-from app.modules.auth.models import User
+from app.modules.services.models import Service, Availability, Booking
+from app.modules.auth.models import User, CreditTransaction
 from app import db
 from datetime import datetime, timedelta
 
@@ -21,24 +22,26 @@ class SalesAI:
     # ── Public entry point ──────────────────────────────────────────────
 
     @staticmethod
-    def process(user_id, text, platform='whatsapp', sender_name=None):
+    def process(user_id, text, platform='whatsapp', sender_name=None, customer_id=None):
         user = User.query.get(user_id)
         if not user:
             return "Sorry, this service is not configured properly."
 
         text = text.strip()
         products = Product.query.filter_by(user_id=user_id, in_stock=True).all()
+        services = Service.query.filter_by(user_id=user_id, is_active=True).all()
+        availabilities = Availability.query.filter_by(user_id=user_id, is_active=True).all()
         biz = user.business_name or 'our store'
 
         if not sender_name:
             sender_name = f"{platform.capitalize()} Customer"
 
         # ── Try Groq AI first ───────────────────────────────────────────
-        intent_data = SalesAI._classify_with_ai(text, products)
+        intent_data = SalesAI._classify_with_ai(text, products=products, services=services, availabilities=availabilities, user_id=user_id, customer_id=customer_id)
 
         if intent_data:
             return SalesAI._dispatch_ai_intent(
-                intent_data, user, products, biz, platform, sender_name
+                intent_data, user, products, biz, platform, sender_name, services=services
             )
 
         # ── Fallback to regex ───────────────────────────────────────────
@@ -49,29 +52,51 @@ class SalesAI:
     # ── AI classification ───────────────────────────────────────────────
 
     @staticmethod
-    def _classify_with_ai(text, products):
+    def _classify_with_ai(text, products=None, services=None, availabilities=None, user_id=None, customer_id=None):
         """Try Groq AI for intent classification."""
         try:
             from app.services.groq_service import GroqService
-            return GroqService.classify_intent(text, products)
+            return GroqService.classify_intent(
+                text, 
+                products=products, 
+                services=services, 
+                availabilities=availabilities, 
+                user_id=user_id, 
+                customer_id=customer_id
+            )
         except Exception as e:
             print(f"[SalesAI] AI unavailable, using regex: {e}")
             return None
 
     @staticmethod
-    def _dispatch_ai_intent(intent_data, user, products, biz, platform, sender_name):
-        """Use AI-generated response directly. Create invoice for orders."""
+    def _dispatch_ai_intent(intent_data, user, products, biz, platform, sender_name, services=None):
+        """Use AI-generated response directly. Create invoice/booking for orders."""
         intent = intent_data.get("intent", "unknown")
         ai_response = intent_data.get("response", "")
 
         if not ai_response:
             return None  # Fallback to regex if AI gave no response
 
-        # ── For orders, create the invoice and append details ────────
-        if intent == "order":
+        final_response_text = ai_response
+        combined_result = None
+
+        if intent in ["order", "booking"]:
+            # ── For service bookings ────────
+            ai_bookings = intent_data.get("bookings", [])
+            if ai_bookings:
+                booking_result = SalesAI._create_booking(user, services, ai_bookings, platform, sender_name)
+                if booking_result:
+                    if isinstance(booking_result, dict):
+                        if "paused" in booking_result["text"].lower() and "contact the seller" in booking_result["text"].lower():
+                            return booking_result["text"]
+                        final_response_text += "\n\n" + booking_result["text"]
+                        combined_result = booking_result # captures the PDF path
+                    else:
+                        final_response_text += "\n\n" + booking_result
+
+            # ── For orders, create the invoice and append details ────────
             ai_products = intent_data.get("products", [])
             if ai_products:
-                # Include negotiated unit_price if AI provided one
                 order_items = []
                 for p in ai_products:
                     if p.get("name"):
@@ -85,18 +110,25 @@ class SalesAI:
                         user, products, order_items, platform, sender_name
                     )
                     if order_result:
-                        # Combine AI's natural response with invoice details
                         if isinstance(order_result, dict):
-                            order_result["text"] = ai_response + "\n\n" + order_result["text"]
-                            return order_result
+                            if "paused" in order_result["text"].lower() and "contact the seller" in order_result["text"].lower():
+                                return order_result["text"]
+                            
+                            final_response_text += "\n\n" + order_result["text"]
+                            if combined_result:
+                                # We already have a booking PDF map. We just override text.
+                                # Let's append text to the first combined_result, but set invoice_id to order so we know it's a multi-invoice turn
+                                pass
+                            else:
+                                combined_result = order_result
                         else:
-                            return ai_response + "\n\n" + order_result
+                            final_response_text += "\n\n" + order_result
 
-            # If order processing failed, still return the AI response
-            return ai_response
+        if combined_result:
+            combined_result["text"] = final_response_text
+            return combined_result
 
-        # ── All other intents: return AI response directly ──────────
-        return ai_response
+        return final_response_text
 
     # ── Regex-based classification (fallback) ───────────────────────────
 
@@ -460,10 +492,15 @@ class SalesAI:
 
     @staticmethod
     def _create_invoice(user, products, order_items, platform, sender_name):
-        """Create an invoice (used by AI dispatch). Returns dict with text + pdf_path.
-        
-        order_items: list of (qty, item_name) or (qty, item_name, negotiated_price)
-        """
+        """Create an invoice (used by AI dispatch). Returns dict with text + pdf_path."""
+        # Allow up to 20 credits of debt (-20) before cutting the merchant off.
+        if user.kasi_credits < -19:
+            return {
+                "text": "Sorry, our automated system is currently paused. Please contact the seller directly to finalize your order!",
+                "pdf_path": None,
+                "invoice_id": None
+            }
+
         line_items = []
 
         for item in order_items:
@@ -523,16 +560,24 @@ class SalesAI:
                 total_price=qty * unit_price,
             )
             db.session.add(item)
+            
+        # Deduct 1 Kasi Credit
+        user.kasi_credits -= 1
+        log = CreditTransaction(
+            user_id=user.id,
+            amount=-1,
+            transaction_type='ai_generation',
+            description=f"Generated Invoice #{invoice.reference}"
+        )
+        db.session.add(log)
         db.session.commit()
-
-        payment_link = f"https://paystack.com/pay/inv-{invoice.reference}"
 
         # Build invoice summary text
         reply = "🧾 *Invoice Generated!*\n\n"
         for product_name, qty, unit_price in line_items:
             reply += f"• {qty}x *{product_name}* — ₦{qty * unit_price:,}\n"
         reply += f"\n*Total: ₦{total_amount:,}*\n"
-        reply += f"\n💳 Pay here: {payment_link}\n\nThank you! 🙏"
+        reply += f"\n🏦 *Payment Instructions:*\nPlease transfer to the bank details listed in the attached PDF Invoice to complete your order!\n\nThank you! 🙏"
 
         # Generate PDF
         pdf_path = None
@@ -582,13 +627,223 @@ class SalesAI:
         }
 
     @staticmethod
+    def _create_booking(user, services, ai_bookings, platform, sender_name):
+        """Create a booking and an invoice from AI output."""
+        if user.kasi_credits < -19:
+            return {
+                "text": "Sorry, our automated system is currently paused. Please contact the seller directly to finalize your booking!",
+                "pdf_path": None,
+                "invoice_id": None
+            }
+
+        line_items = []
+        for b in ai_bookings:
+            s_name = b.get("service_name", "")
+            loc = b.get("location_type", "in_shop")
+            b_date = b.get("date")
+            b_time = b.get("time")
+            
+            # Match strictly by location type first to capture differentiated pricing (e.g Home vs Shop)
+            filtered_services = [s for s in services if getattr(s, 'service_type', 'in_shop') == loc]
+            matched = SalesAI._find_product(filtered_services, s_name)
+            
+            # Fallback if no specific loc matched
+            if not matched:
+                matched = SalesAI._find_product(services, s_name)
+            if matched:
+                d = None
+                t = None
+                try:
+                    d = datetime.strptime(b_date, "%Y-%m-%d").date()
+                except Exception as e:
+                    print(f"Booking date parse error: {e}")
+                    continue
+
+                # Try common formats for time
+                for fmt in ("%H:%M", "%I:%M %p", "%I:%M%p", "%H:%M:%S", "%I %p", "%I%p"):
+                    try:
+                        # Clean up strings like "9:00 AM" to "09:00 AM" for stricter `%I` parser if needed, 
+                        # but Python `%I` already handles single digits on most platforms. 
+                        # Just in case, try padding:
+                        padded_time = b_time
+                        if ':' in padded_time and len(padded_time.split(':')[0].strip()) == 1:
+                            padded_time = '0' + padded_time.strip()
+                        
+                        t = datetime.strptime(padded_time, fmt).time()
+                        break
+                    except ValueError:
+                        pass
+                    
+                    try:
+                        t = datetime.strptime(b_time, fmt).time()
+                        break
+                    except ValueError:
+                        pass
+                
+                if d and t:
+                    dt = datetime.combine(d, t)
+                    duration_mins = matched.duration if hasattr(matched, 'duration') and matched.duration else 30
+                    et = (dt + timedelta(minutes=duration_mins)).time()
+                    line_items.append((matched, d, t, et, loc))
+
+        if not line_items:
+            print("No valid line items parsed for booking.")
+            print(f"AI Bookings attempting to parse: {ai_bookings}")
+            return None
+
+        # Build Customer
+        customer = Customer.query.filter_by(user_id=user.id, name=sender_name).first()
+        if not customer:
+            customer = Customer(
+                user_id=user.id,
+                name=sender_name,
+                phone="",
+                email="",
+                address=f"{platform.capitalize()} Client",
+            )
+            db.session.add(customer)
+            db.session.commit()
+
+        total_amount = sum(service.price for service, _, _, _, _ in line_items)
+
+        # Build Invoice
+        prefix = platform[:2].upper()
+        invoice = Invoice(
+            user_id=user.id,
+            customer_id=customer.id,
+            reference=f"{prefix}-{int(datetime.now().timestamp())}",
+            date_issued=datetime.utcnow().date(),
+            due_date=datetime.utcnow().date() + timedelta(days=1),
+            total_amount=total_amount,
+            status='Pending',
+        )
+        db.session.add(invoice)
+        db.session.flush() # flush to get invoice.id
+
+        reply = "📅 *Booking Confirmed!*\n\n"
+        
+        pdf_invoice_items = []
+        for (service, b_date, b_time, e_time, loc) in line_items:
+            # 1. Booking record
+            booking = Booking(
+                user_id=user.id,
+                customer_id=customer.id,
+                service_id=service.id,
+                booking_date=b_date,
+                booking_time=b_time,
+                end_time=e_time,
+                status="Confirmed",
+                location_type=loc
+            )
+            db.session.add(booking)
+            
+            # 2. Invoice Item record
+            loc_str = "Home Service" if loc == "home_service" else "In Shop"
+            desc = f"{service.name} ({loc_str}) on {b_date.strftime('%b %d')} at {b_time.strftime('%I:%M %p')}"
+            
+            item = InvoiceItem(
+                invoice_id=invoice.id,
+                description=desc,
+                quantity=1,
+                unit_price=service.price,
+                total_price=service.price,
+            )
+            db.session.add(item)
+            
+            pdf_invoice_items.append({
+                'description': desc,
+                'quantity': 1,
+                'unit_price': service.price,
+                'total_price': service.price,
+            })
+
+            reply += f"• *{service.name}* ({loc_str})\n"
+            reply += f"  Date: {b_date.strftime('%B %d, %Y')}\n"
+            reply += f"  Time: {b_time.strftime('%I:%M %p')}\n"
+            reply += f"  Price: ₦{service.price:,.0f}\n\n"
+
+        # Deduct 1 Kasi Credit
+        user.kasi_credits -= 1
+        log = CreditTransaction(
+            user_id=user.id,
+            amount=-1,
+            transaction_type='ai_generation',
+            description=f"Generated Booking & Invoice #{invoice.reference}"
+        )
+        db.session.add(log)
+        db.session.commit()
+
+        # Generate Invoice PDF
+        pdf_path = None
+        try:
+            from app.services.pdf_service import PDFService
+            subtotal = total_amount
+            tax_amount = 0.0 # No tax on services right now to keep it simple, or user can add later
+            
+            invoice_data = {
+                'reference': invoice.reference,
+                'date_issued': str(invoice.date_issued),
+                'due_date': str(invoice.due_date),
+                'subtotal': subtotal,
+                'tax_amount': tax_amount,
+                'total_amount': subtotal + tax_amount,
+                'items': pdf_invoice_items,
+                'merchant': {
+                    'business_name': user.business_name or 'BizFlow Store',
+                    'phone': user.phone or '',
+                    'address': user.address or '',
+                    'logo_url': user.logo_url if hasattr(user, 'logo_url') else None,
+                    'bank_name': user.bank_name if hasattr(user, 'bank_name') else None,
+                    'account_number': user.account_number if hasattr(user, 'account_number') else None,
+                    'account_name': user.account_name if hasattr(user, 'account_name') else None,
+                },
+                'customer': {
+                    'name': sender_name,
+                    'phone': '',
+                    'email': '',
+                },
+            }
+            pdf_path = PDFService.generate_invoice_pdf(invoice_data)
+        except Exception as e:
+            print(f"PDF generation failed for booking: {e}")
+
+        reply += "Thank you! We have attached your invoice detailing the service cost. We will see you then! 🙏"
+
+        return {
+            "text": reply,
+            "pdf_path": pdf_path,
+            "invoice_id": invoice.id
+        }
+
+    @staticmethod
     def _handle_order(user, products, order_items, platform, sender_name):
+        # Allow up to 20 credits of debt (-20) before cutting the merchant off.
+        if user.kasi_credits < -19:
+            return {
+                "text": "Sorry, our automated system is currently paused. Please contact the seller directly to finalize your order!",
+                "pdf_path": None,
+                "invoice_id": None
+            }
+            
         line_items = []
 
-        for qty, item_name in order_items:
+        for item in order_items:
+            # Unpack — negotiated_price is optional (3rd element)
+            if len(item) == 3:
+                qty, item_name, negotiated_price = item
+            else:
+                qty, item_name = item
+                negotiated_price = None
+
             matched = SalesAI._find_product(products, item_name)
             if matched:
-                line_items.append((matched.name, qty, matched.price))
+                # Use negotiated price if valid (>= min_price)
+                price = matched.price
+                if negotiated_price is not None:
+                    min_price = matched.min_price if hasattr(matched, 'min_price') and matched.min_price else matched.price
+                    if negotiated_price >= min_price:
+                        price = negotiated_price
+                line_items.append((matched.name, qty, price))
             else:
                 return SalesAI._not_found_response(products, item_name)
 
@@ -628,15 +883,23 @@ class SalesAI:
                 total_price=qty * unit_price,
             )
             db.session.add(item)
+            
+        # Deduct 1 Kasi Credit
+        user.kasi_credits -= 1
+        log = CreditTransaction(
+            user_id=user.id,
+            amount=-1,
+            transaction_type='ai_generation',
+            description=f"Generated Invoice #{invoice.reference}"
+        )
+        db.session.add(log)
         db.session.commit()
-
-        payment_link = f"https://paystack.com/pay/inv-{invoice.reference}"
 
         reply = "🧾 *Invoice Generated!*\n\n"
         for product_name, qty, unit_price in line_items:
             reply += f"• {qty}x *{product_name}* — ₦{qty * unit_price:,}\n"
         reply += f"\n*Total: ₦{total_amount:,}*\n"
-        reply += f"\n💳 Pay here: {payment_link}\n\nThank you for your order! 🙏"
+        reply += f"\n🏦 *Payment Instructions:*\nPlease transfer to the bank details listed in the attached PDF Invoice to complete your order!\n\nThank you for your order! 🙏"
 
         pdf_path = None
         try:

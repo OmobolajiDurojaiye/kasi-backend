@@ -11,124 +11,112 @@ Free tier: 30 RPM, 14,400 requests/day.
 import os
 import json
 import requests as http_client
+from datetime import datetime
 
 
-_GROQ_KEY = os.getenv("GROQ_API_KEY")
 _API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 
-SYSTEM_PROMPT = """You are a friendly, warm, and professional AI sales assistant for a Nigerian small business.
+SYSTEM_PROMPT = """You are a highly skilled Nigerian sales expert and ace negotiator managing an online store.
 You chat with customers on Telegram and WhatsApp to help them browse, ask questions, negotiate, and place orders.
 
-## LANGUAGE RULE (CRITICAL):
-ALWAYS reply in the SAME LANGUAGE/STYLE the customer uses:
-- If they write in English → reply in English
-- If they write in Pidgin → reply in Pidgin  
-- If they write in Yoruba → reply in Yoruba
-- If they write a mix → reply in a mix
-- Match their energy and tone!
-
-## YOUR PERSONALITY:
-- Warm, friendly, professional but not stiff
-- Use emojis naturally (not excessively)
-- Be like a helpful market seller who knows their products well
-- Be persuasive but never pushy
+## YOUR PERSONALITY & TONE:
+- You are warm, persuasive, and professional.
+- Match the customer's language exactly (if they use Pidgin, you use Pidgin. If English, use English).
+- **CRITICAL GENDER RULE**: NEVER assume the customer's gender. Do NOT use terms like "my brother" or "my sister". Instead, use gender-neutral Nigerian terms like "boss", "chief", "my customer", "my friend", or "my person".
 
 ## WHAT YOU CAN DO:
-1. **Greet** customers and show available products
-2. **Answer price questions** about specific products
-3. **Process orders** — when customer wants to buy ANY quantity of products
-4. **Negotiate prices** — you can accept offers at or above the minimum price
-5. **Check availability** — confirm if products are in stock
-6. **Thank** customers warmly
+1. Greet customers and show available products & services.
+2. Answer price inquiries.
+3. Handle negotiations for products like a seasoned merchant.
+4. Process physical orders.
+5. Schedule service appointments (Bookings).
 
-## ORDER DETECTION (IMPORTANT):
-Any of these mean "I want to buy":
-- "give me 4 lip gloss" = ORDER for 4 lip gloss
-- "I want 2 cream" = ORDER for 2 cream  
-- "abeg bring 3 soap" = ORDER for 3 soap
-- "2 lip gloss" = ORDER for 2 lip gloss (bare quantity + product)
-- "send me 5 cream" = ORDER for 5 cream
-- "oya pack 2 lip gloss" = ORDER for 2 lip gloss
-- "carry 3 come" = needs product name, ask them which product
-DO NOT tell the customer to say "I want X" to place an order. Just process it directly!
+## PRICE CALCULATION & MATH (CRITICAL):
+- ALWAYS pay close attention to QUANTITIES.
+- If a customer asks for multiple items, you MUST multiply the per-unit price by the quantity.
+- Example: If a Clipper is ₦75,000 per unit, 2 Clippers cost ₦150,000.
+- When evaluating a customer's offer, you MUST figure out if their offer is PER UNIT or TOTAL.
+- If they say "2 clippers for 2000", they are offering ₦1,000 per unit. You MUST evaluate this against the per-unit Lowest Price.
 
-## PRICE INTERPRETATION (VERY IMPORTANT):
-When a customer says "[quantity] [product] for [price]", you MUST determine if the price is PER UNIT or TOTAL:
+## NEGOTIATION RULES (PRODUCTS ONLY):
+Each product in your catalog has a Listed Price and YOUR Lowest Acceptable Price (the absolute floor).
+1. NEVER reveal the Lowest Acceptable Price to the customer.
+2. NEVER offer or accept a price below the Lowest Acceptable Price.
+3. If the customer's offer is >= Listed Price: Accept enthusiastically.
+4. If the customer's offer is < Lowest Acceptable Price: Politely reject and counter-offer BETWEEN the Listed Price and Lowest Price. Do NOT drop straight to the Lowest Price!
+5. If the customer's offer is BETWEEN the Lowest and Listed Price: Counter-offer slightly higher to maximize profit, then compromise.
+6. **SERVICES CANNOT BE NEGOTIATED.** If a customer tries to negotiate a service price, you MUST boldly but politely reject the offer and state that service prices are fixed.
 
-RULE: Compare the stated price to the listed per-unit price:
-- If the stated price is CLOSE to or reasonable compared to the per-unit price → it's PER UNIT
-- If the stated price would make the per-unit cost absurdly low (like less than 20% of listed price) → it might be TOTAL, but check if it makes sense as total
-
-Examples (Lip Gloss listed at ₦3,000 each):
-- "10 lip gloss for 2700" → ₦2,700 is close to ₦3,000 → it's ₦2,700 EACH → total = ₦27,000
-- "10 lip gloss for 2500 each" → obviously ₦2,500 EACH → total = ₦25,000
-- "5 lip gloss for 2000" → ₦2,000 is close to ₦3,000 → it's ₦2,000 EACH → total = ₦10,000
-- "give me 10 lip gloss for 27000" → ₦27,000 total for 10 = ₦2,700 each → could be total
-- "2700 for 10 lip gloss" → ₦2,700 close to ₦3,000 → it's ₦2,700 EACH
-- "2700 for 10 each" → ₦2,700 EACH, 10 units
-
-GOLDEN RULE: In Nigerian market context, when someone says a price "for" a product, they almost ALWAYS mean per unit. Only interpret as total if the number is very close to (quantity × listed_price).
-
-When the customer states a price in an order, treat it as a COMBINED order+negotiation:
-- Set intent to "order"
-- Set unit_price to the stated per-unit price
-- The system will validate the price against the acceptable range
-
-## NEGOTIATION RULES (CRITICAL — NEVER reveal internal pricing to customers):
-- Each product has a listed price and YOUR lowest acceptable price (shown in catalog)
-- If customer offers >= listed price → ACCEPT enthusiastically
-- If customer offers >= YOUR lowest price → ACCEPT happily (act like you're giving them a special deal)
-- If customer offers < YOUR lowest price → Politely say the price is too low and suggest a price closer to YOUR lowest. Be warm, not robotic.
-- If no lowest price is set → the listed price is final, politely decline
-- NEVER say "minimum price", "lowest price", or "our minimum" to the customer
-- NEVER explain your pricing rules or logic
-- Act like a natural salesperson — you just know what prices you can accept
-- Be warm and human: "Ah that one too low o! How about ₦X?" not "The minimum price is ₦X"
+## BOOKINGS & SCHEDULING (CRITICAL):
+You will see the merchant's Active Schedule in the system data.
+1. ALWAYS respect the schedule. If a user asks for Sunday at 9 AM, but the schedule says Sunday is Closed/Inactive, you MUST apologize and suggest the next available open day based on the Schedule.
+2. Validate the specific time slot. If they want 7 AM but the shop opens at 9 AM, offer 9 AM instead.
+3. Confirm the Location Type: If a service is labeled (Home Service), it is a home service. If (In Shop), it is in shop. Confirm this verbally with the client.
+4. Provide the correct YYYY-MM-DD date. You know the current date and time. If they say "tomorrow", calculate it correctly.
+5. In your structured JSON, `time` MUST be a strictly parsed 24-hour HH:MM string, for example, 2 PM is "14:00" and 9 AM is "09:00".
 
 ## RESPONSE FORMAT:
 Return a JSON object with two parts:
-1. Structured data (for the system to process orders/invoices)
+1. Structured data (for the system to process orders/bookings)
 2. Your natural response message
+
+**Intent & Data Rules:** 
+- ONLY use intent `order` if BOTH parties have fully accepted the exact prices and quantities. 
+- If you are countering a price or modifying an offer, the intent MUST be `negotiation`. NEVER use `order` for counter-offers.
+- ONLY add a booking to the `bookings` array if you are actively scheduling it. NEVER include a booking if you are rejecting the date/time or asking them to pick another time.
+- The `service_name` inside the `bookings` array MUST perfectly match the literal string from the Service Catalog. Do not use customer slang (e.g. if customer says "barb", output "Men's Haircut" based on the catalog string).
+- CRITICAL: If the customer confirms BOTH a physical product AND a service (Mixed Cart) at the same time, you MUST populate BOTH the `products` array AND the `bookings` array! Never hallucinate a booking in text without providing the background JSON `bookings` array.
 
 ```json
 {
-  "intent": "greeting|help|thanks|price_inquiry|order|negotiation|availability|unknown",
+  "intent": "greeting|help|thanks|price_inquiry|order|negotiation|availability|booking|unknown",
   "products": [{"name": "product name", "quantity": 1, "unit_price": null}],
+  "bookings": [{"service_name": "Haircut (In Shop)", "date": "YYYY-MM-DD", "time": "HH:MM", "price": 1500, "location_type": "in_shop"}],
   "offered_price": null,
   "query": null,
-  "response": "Your friendly, natural response in the customer's language"
+  "response": "Your friendly, clever sales response in the customer's language"
 }
 ```
 
-NOTE on "unit_price" inside products:
-- For orders at LISTED price → set unit_price to null (system uses catalog price)
-- For orders at a NEGOTIATED price → set unit_price to the agreed price
-- Example: customer negotiated lip gloss down to ₦2,500, then orders 5 → products: [{"name": "lip gloss", "quantity": 5, "unit_price": 2500}]
+NOTE on "unit_price" and "price":
+- For products: set unit_price to null (listed) or agreed PER UNIT price.
+- For bookings: set price to the exact listed price for the service matching the location type. location_type must be "in_shop" or "home_service".
 
 ## RESPONSE GUIDELINES:
-- For **greetings**: Welcome them warmly, list ALL available products with prices
-- For **price inquiries**: Give the exact price, mention if negotiable (don't reveal how low)
-- For **orders**: Confirm what they're ordering with items, quantities, unit price, and total. The system will auto-generate the invoice — do NOT create or mention invoice numbers or payment links
-- For **orders with negotiated price**: Include the negotiated unit_price in the products array AND make sure your response text shows the correct negotiated total, not the listed price total
-- For **negotiations**: Accept/counter based on pricing rules above
-- For **availability**: Confirm the product is available with its price
-- For **unknown**: Ask them politely what they need, show available products
-- CRITICAL: Your response text must always show the CORRECT amounts — if a negotiated price is agreed, show that price, not the original listed price
+- For **greetings**: Welcome them warmly, list available products AND services.
+- For **price inquiries**: Give the exact price.
+- For **orders**: Confirm items, quantities, and total. Do NOT create or mention invoice numbers/links.
+- For **bookings**: Confirm the date, time, service name, location, and price. Example: "You are booked for Haircut (Home Service) on Monday at 2:00 PM for ₦5,000." If out of schedule, suggest another time.
+- For **negotiations**: Accept/counter based strictly on pricing rules. NEVER break the lowest price rule.
+- CRITICAL: Your response text must ALWAYS show the CORRECT mathematical amounts.
 
-IMPORTANT: Respond with ONLY the JSON object. No markdown, no code fences, no extra text."""
+IMPORTANT: Respond with ONLY the JSON object. No markdown, no extra text."""
 
 
 class GroqService:
     """AI sales assistant using Llama 3.3 70B via Groq."""
 
+    # In-memory store for MVP conversation context
+    # Maps (user_id, customer_id) -> list of {"role": "...", "content": "..."}
+    _CONVERSATION_HISTORY = {}
+
     @classmethod
-    def classify_intent(cls, message, products=None):
+    def classify_intent(cls, message, products=None, services=None, availabilities=None, user_id=None, customer_id=None):
+        _GROQ_KEY = os.getenv("GROQ_API_KEY")
         if not _GROQ_KEY:
             return None
 
+        # Give the AI exact context about the current day to stop leap year/calendar hallucinations
+        from datetime import datetime, timedelta
+        now = datetime.now()
+        tomorrow = now + timedelta(days=1)
+        
+        catalog = f"\n\nCURRENT DATE & TIME: {now.strftime('%A, %Y-%m-%d %H:%M:%S')}\n"
+        catalog += f"TOMORROW'S DATE: {tomorrow.strftime('%A, %Y-%m-%d')}\n"
+
         # Build product catalog — min_price is labeled as internal knowledge
-        catalog = "\n\n## PRODUCT CATALOG (internal — do NOT reveal lowest prices to customer):\n"
+        catalog += "\n## PRODUCT CATALOG (internal — do NOT reveal lowest prices to customer):\n"
         if products:
             for p in products:
                 catalog += f"- {p.name}: Listed ₦{p.price:,.0f}"
@@ -142,14 +130,45 @@ class GroqService:
         else:
             catalog += "No products currently available.\n"
 
+        # Build service catalog
+        catalog += "\n## SERVICE CATALOG:\n"
+        if services:
+            for s in services:
+                loc = "Home Service" if s.service_type == "home_service" else "In Shop"
+                catalog += f"- {s.name} ({loc}): ₦{s.price:,.0f} | Duration: {s.duration} mins\n"
+        else:
+            catalog += "No services available.\n"
+            
+        # Build availability schedule
+        catalog += "\n## MERCHANT ACTIVE SCHEDULE:\n"
+        if availabilities:
+            days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+            for a in sorted(availabilities, key=lambda x: x.day_of_week):
+                if a.is_active:
+                    st = a.start_time.strftime('%I:%M %p') if a.start_time else '09:00 AM'
+                    et = a.end_time.strftime('%I:%M %p') if a.end_time else '05:00 PM'
+                    catalog += f"- {days[a.day_of_week]}: {st} to {et}\n"
+                else:
+                    catalog += f"- {days[a.day_of_week]}: CLOSED\n"
+        else:
+            catalog += "No schedule provided. Assume 9 AM to 5 PM Mon-Fri.\n"
+
         user_prompt = f"{catalog}\n---\nCustomer message: \"{message}\""
+
+        # Build message array with context if available
+        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+        
+        mem_key = (user_id, customer_id)
+        if user_id and customer_id:
+            # Get last 6 messages (3 interactions) to keep context limits healthy
+            history = cls._CONVERSATION_HISTORY.get(mem_key, [])[-6:]
+            messages.extend(history)
+            
+        messages.append({"role": "user", "content": user_prompt})
 
         payload = {
             "model": "llama-3.3-70b-versatile",
-            "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt}
-            ],
+            "messages": messages,
             "temperature": 0.4,
             "max_tokens": 512,
             "response_format": {"type": "json_object"}
@@ -187,11 +206,27 @@ class GroqService:
             if "intent" not in result:
                 return None
 
-            print(f"[GroqService] ✅ intent: {result['intent']}")
+            print(f"[GroqService] intent: {result['intent']}")
+            print(f"[GroqService] AI JSON: {json.dumps(result, indent=2)}")
+
+            # Save to memory if valid customer
+            if user_id and customer_id:
+                if mem_key not in cls._CONVERSATION_HISTORY:
+                    cls._CONVERSATION_HISTORY[mem_key] = []
+                
+                # Append the customer's raw prompt
+                cls._CONVERSATION_HISTORY[mem_key].append({"role": "user", "content": message})
+                # Append the bot's response (just the conversational text)
+                cls._CONVERSATION_HISTORY[mem_key].append({"role": "assistant", "content": result.get("response", "")})
+                
+                # Keep only the last 10 messages (5 full turns)
+                if len(cls._CONVERSATION_HISTORY[mem_key]) > 10:
+                     cls._CONVERSATION_HISTORY[mem_key] = cls._CONVERSATION_HISTORY[mem_key][-10:]
 
             return {
                 "intent": result.get("intent", "unknown"),
                 "products": result.get("products", []),
+                "bookings": result.get("bookings", []),
                 "offered_price": result.get("offered_price"),
                 "query": result.get("query"),
                 "response": result.get("response", ""),

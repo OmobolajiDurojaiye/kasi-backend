@@ -39,3 +39,29 @@ class PaystackService:
             if hasattr(e, 'response') and e.response:
                  current_app.logger.error(f"Paystack Response: {e.response.text}")
             return None
+
+    @staticmethod
+    def verify_transaction(reference):
+        """
+        Verify a Paystack transaction by its reference.
+        """
+        secret_key = os.environ.get('PAYSTACK_SECRET_KEY')
+        if not secret_key:
+            current_app.logger.error("Paystack Secret Key not found")
+            return None
+
+        url = f"https://api.paystack.co/transaction/verify/{reference}"
+        headers = {
+            "Authorization": f"Bearer {secret_key}",
+            "Content-Type": "application/json"
+        }
+
+        try:
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            current_app.logger.error(f"Paystack Verification Error: {str(e)}")
+            if hasattr(e, 'response') and e.response:
+                 current_app.logger.error(f"Paystack Response: {e.response.text}")
+            return None

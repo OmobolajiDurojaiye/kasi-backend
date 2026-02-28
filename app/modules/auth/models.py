@@ -18,6 +18,11 @@ class User(db.Model):
     account_number = db.Column(db.String(20))
     account_name = db.Column(db.String(100))
 
+    is_admin = db.Column(db.Boolean, default=False)
+    admin_role = db.Column(db.String(50), default='None')
+    account_status = db.Column(db.String(20), default='active')
+    kasi_credits = db.Column(db.Integer, default=5) # 5 Free starting credits
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def set_password(self, password):
@@ -37,6 +42,53 @@ class User(db.Model):
             'bank_name': self.bank_name,
             'account_number': self.account_number,
             'account_name': self.account_name,
+            'is_admin': self.is_admin,
+            'admin_role': self.admin_role,
+            'account_status': self.account_status,
+            'kasi_credits': self.kasi_credits,
+            'created_at': self.created_at.isoformat()
+        }
+
+class Announcement(db.Model):
+    __tablename__ = 'announcements'
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(200), nullable=False)
+    message = db.Column(db.Text, nullable=False)
+    type = db.Column(db.String(50), default='info') # info, warning, success
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'title': self.title,
+            'message': self.message,
+            'type': self.type,
+            'is_active': self.is_active,
+            'created_at': self.created_at.isoformat()
+        }
+
+class CreditTransaction(db.Model):
+    __tablename__ = 'credit_transactions'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    amount = db.Column(db.Integer, nullable=False) # e.g. +100 or -1
+    transaction_type = db.Column(db.String(50), nullable=False) # 'purchase', 'ai_generation', 'refund', 'bonus'
+    reference_id = db.Column(db.String(100), nullable=True) # Paystack ref, if applicable
+    description = db.Column(db.String(255), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # Relationships
+    user = db.relationship('User', backref=db.backref('credit_transactions', lazy=True))
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'amount': self.amount,
+            'transaction_type': self.transaction_type,
+            'reference_id': self.reference_id,
+            'description': self.description,
             'created_at': self.created_at.isoformat()
         }
 

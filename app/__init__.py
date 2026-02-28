@@ -31,6 +31,7 @@ def create_app(config_class=Config):
     from .modules.invoices import models
     from .modules.products import models as product_models
     from .modules.telegram import models as telegram_models
+    from .modules.services import models as service_models
 
     from .modules.products.routes import products_bp
     app.register_blueprint(products_bp, url_prefix='/api/products')
@@ -40,5 +41,17 @@ def create_app(config_class=Config):
 
     from .modules.telegram.routes import telegram_bp
     app.register_blueprint(telegram_bp, url_prefix='/api/telegram')
+    
+    from .modules.analytics.routes import analytics_bp
+    app.register_blueprint(analytics_bp, url_prefix='/api/analytics')
+
+    from .modules.admin.routes import admin_bp
+    app.register_blueprint(admin_bp, url_prefix='/api/admin')
+
+    from .modules.billing.routes import billing_bp
+    app.register_blueprint(billing_bp, url_prefix='/api/billing')
+
+    from .modules.services.routes import services_bp
+    app.register_blueprint(services_bp, url_prefix='/api/services')
 
     return app
