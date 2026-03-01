@@ -65,6 +65,7 @@ def initialize_topup():
         email=email,
         amount=amount,
         reference=reference,
+        callback_url=data.get('callback_url')
     )
     
     if qt_res and qt_res.get('status'):
