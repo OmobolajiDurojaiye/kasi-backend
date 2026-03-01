@@ -628,7 +628,7 @@ class SalesAI:
 
     @staticmethod
     def _create_booking(user, services, ai_bookings, platform, sender_name):
-        """Create a booking and an invoice from AI output."""
+        """Create a booking and a booking slip from AI output."""
         if user.kasi_credits < -19:
             return {
                 "text": "Sorry, our automated system is currently paused. Please contact the seller directly to finalize your booking!",
@@ -640,6 +640,13 @@ class SalesAI:
         for b in ai_bookings:
             s_name = b.get("service_name", "")
             loc = b.get("location_type", "in_shop")
+            
+            # AI sometimes hallucinates 'in_shop' loc even if it puts (Home Service) in the name
+            if "(Home Service)" in s_name or "home" in s_name.lower():
+                loc = "home_service"
+            elif "(In Shop)" in s_name or "shop" in s_name.lower():
+                loc = "in_shop"
+            
             b_date = b.get("date")
             b_time = b.get("time")
             
@@ -807,7 +814,7 @@ class SalesAI:
         except Exception as e:
             print(f"PDF generation failed for booking: {e}")
 
-        reply += "Thank you! We have attached your invoice detailing the service cost. We will see you then! 🙏"
+        reply += "Here is your booking confirmation slip. Payment can be made to the account details provided, or in-person upon service. We look forward to seeing you! 🙏"
 
         return {
             "text": reply,

@@ -23,11 +23,14 @@ class PaystackService:
         # Paystack expects amount in kobo
         amount_kobo = int(float(amount) * 100)
         
+        # Use FRONTEND_URL from environment or fallback to localhost
+        frontend_url = os.environ.get('FRONTEND_URL', 'http://localhost:5173').rstrip('/')
+        
         data = {
             "email": email,
             "amount": amount_kobo,
             "reference": reference,
-            "callback_url": callback_url or "http://localhost:5173/payment/callback" 
+            "callback_url": callback_url or f"{frontend_url}/payment/callback" 
         }
 
         try:

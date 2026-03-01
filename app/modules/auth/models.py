@@ -22,6 +22,7 @@ class User(db.Model):
     admin_role = db.Column(db.String(50), default='None')
     account_status = db.Column(db.String(20), default='active')
     kasi_credits = db.Column(db.Integer, default=5) # 5 Free starting credits
+    ai_instructions = db.Column(db.Text, nullable=True) # Custom merchant rules
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -46,6 +47,7 @@ class User(db.Model):
             'admin_role': self.admin_role,
             'account_status': self.account_status,
             'kasi_credits': self.kasi_credits,
+            'ai_instructions': self.ai_instructions,
             'created_at': self.created_at.isoformat()
         }
 
@@ -92,4 +94,24 @@ class CreditTransaction(db.Model):
             'created_at': self.created_at.isoformat()
         }
 
-#just so it cna work
+class Integration(db.Model):
+    __tablename__ = 'integrations'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    platform = db.Column(db.String(50), nullable=False) # "whatsapp", "telegram"
+    instance_name = db.Column(db.String(100), unique=True, nullable=True) # e.g., "kasi_whatsapp_user_5"
+    connection_status = db.Column(db.String(20), default="disconnected")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # Relationships
+    user = db.relationship('User', backref=db.backref('integrations', lazy=True))
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'platform': self.platform,
+            'instance_name': self.instance_name,
+            'connection_status': self.connection_status,
+            'created_at': self.created_at.isoformat()
+        }

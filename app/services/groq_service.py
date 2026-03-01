@@ -46,7 +46,7 @@ Each product in your catalog has a Listed Price and YOUR Lowest Acceptable Price
 3. If the customer's offer is >= Listed Price: Accept enthusiastically.
 4. If the customer's offer is < Lowest Acceptable Price: Politely reject and counter-offer BETWEEN the Listed Price and Lowest Price. Do NOT drop straight to the Lowest Price!
 5. If the customer's offer is BETWEEN the Lowest and Listed Price: Counter-offer slightly higher to maximize profit, then compromise.
-6. **SERVICES CANNOT BE NEGOTIATED.** If a customer tries to negotiate a service price, you MUST boldly but politely reject the offer and state that service prices are fixed.
+6. **SERVICES CANNOT BE NEGOTIATED.** If a customer tries to negotiate a service price (like a Haircut, consultation, etc.), you MUST boldly reject the offer. Do not give any discount or counter-offers for services. Just say the price is fixed!
 
 ## BOOKINGS & SCHEDULING (CRITICAL):
 You will see the merchant's Active Schedule in the system data.
@@ -67,10 +67,11 @@ Return a JSON object with two parts:
 - ONLY add a booking to the `bookings` array if you are actively scheduling it. NEVER include a booking if you are rejecting the date/time or asking them to pick another time.
 - The `service_name` inside the `bookings` array MUST perfectly match the literal string from the Service Catalog. Do not use customer slang (e.g. if customer says "barb", output "Men's Haircut" based on the catalog string).
 - CRITICAL: If the customer confirms BOTH a physical product AND a service (Mixed Cart) at the same time, you MUST populate BOTH the `products` array AND the `bookings` array! Never hallucinate a booking in text without providing the background JSON `bookings` array.
+- If the customer says they have made a payment or sent a receipt, the intent MUST be `payment_confirmation`.
 
 ```json
 {
-  "intent": "greeting|help|thanks|price_inquiry|order|negotiation|availability|booking|unknown",
+  "intent": "greeting|help|thanks|price_inquiry|order|negotiation|availability|booking|payment_confirmation|unknown",
   "products": [{"name": "product name", "quantity": 1, "unit_price": null}],
   "bookings": [{"service_name": "Haircut (In Shop)", "date": "YYYY-MM-DD", "time": "HH:MM", "price": 1500, "location_type": "in_shop"}],
   "offered_price": null,
@@ -89,6 +90,7 @@ NOTE on "unit_price" and "price":
 - For **orders**: Confirm items, quantities, and total. Do NOT create or mention invoice numbers/links.
 - For **bookings**: Confirm the date, time, service name, location, and price. Example: "You are booked for Haircut (Home Service) on Monday at 2:00 PM for ₦5,000." If out of schedule, suggest another time.
 - For **negotiations**: Accept/counter based strictly on pricing rules. NEVER break the lowest price rule.
+- For **payment_confirmation**: Acknowledge the payment gracefully and state that the merchant will verify it shortly. Do NOT populate the `products` or `bookings` arrays for this intent.
 - CRITICAL: Your response text must ALWAYS show the CORRECT mathematical amounts.
 
 IMPORTANT: Respond with ONLY the JSON object. No markdown, no extra text."""
@@ -111,6 +113,14 @@ class GroqService:
         from datetime import datetime, timedelta
         now = datetime.now()
         tomorrow = now + timedelta(days=1)
+        
+        # Load custom merchant specific rules
+        from app.modules.auth.models import User
+        merchant_rules = ""
+        if user_id:
+            user_obj = User.query.get(user_id)
+            if user_obj and user_obj.ai_instructions:
+                merchant_rules = f"\n\n## MERCHANT SPECIFIC RULES (OBEY THESE):\n{user_obj.ai_instructions}\n"
         
         catalog = f"\n\nCURRENT DATE & TIME: {now.strftime('%A, %Y-%m-%d %H:%M:%S')}\n"
         catalog += f"TOMORROW'S DATE: {tomorrow.strftime('%A, %Y-%m-%d')}\n"
@@ -153,7 +163,7 @@ class GroqService:
         else:
             catalog += "No schedule provided. Assume 9 AM to 5 PM Mon-Fri.\n"
 
-        user_prompt = f"{catalog}\n---\nCustomer message: \"{message}\""
+        user_prompt = f"{catalog}{merchant_rules}\n---\nCustomer message: \"{message}\""
 
         # Build message array with context if available
         messages = [{"role": "system", "content": SYSTEM_PROMPT}]

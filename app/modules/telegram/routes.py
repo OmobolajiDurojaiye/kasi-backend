@@ -109,9 +109,9 @@ def incoming_webhook(user_id):
     if not data:
         return jsonify({"ok": True}), 200
 
-    # Extract message
+    # Extract message text or caption (for images like receipts)
     message = data.get('message', {})
-    text = message.get('text', '')
+    text = message.get('text') or message.get('caption', '')
     chat_id = message.get('chat', {}).get('id')
     sender = message.get('from', {})
     sender_name = f"{sender.get('first_name', '')} {sender.get('last_name', '')}".strip() or 'Telegram Customer'

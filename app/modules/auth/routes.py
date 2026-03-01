@@ -76,6 +76,8 @@ def update_profile():
         user.account_number = data['account_number']
     if 'account_name' in data:
         user.account_name = data['account_name']
+    if 'ai_instructions' in data:
+        user.ai_instructions = data['ai_instructions']
         
     db.session.commit()
     return jsonify(user.to_dict()), 200

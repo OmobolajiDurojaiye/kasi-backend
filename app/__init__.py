@@ -54,4 +54,7 @@ def create_app(config_class=Config):
     from .modules.services.routes import services_bp
     app.register_blueprint(services_bp, url_prefix='/api/services')
 
+    from .modules.whatsapp.routes import whatsapp_bp
+    app.register_blueprint(whatsapp_bp, url_prefix='/api/whatsapp')
+
     return app
