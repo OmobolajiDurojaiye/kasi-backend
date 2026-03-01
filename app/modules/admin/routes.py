@@ -4,7 +4,7 @@ from app.extensions import db
 from sqlalchemy import func
 from datetime import datetime, timedelta
 
-from app.modules.auth.models import User, Announcement
+from app.modules.auth.models import User, Announcement, CreditTransaction
 from app.modules.invoices.models import Invoice, Customer
 from app.modules.products.models import Product
 
@@ -372,3 +372,36 @@ def toggle_announcement(announcement_id):
 
     db.session.commit()
     return jsonify({"status": "success", "data": announcement.to_dict()}), 200
+
+@admin_bp.route('/transactions', methods=['GET'])
+@jwt_required()
+def get_admin_transactions():
+    user_id = get_jwt_identity()
+    admin_user = User.query.get(user_id)
+    
+    if not admin_user or not admin_user.is_admin or admin_user.admin_role not in ['Super Admin', 'Finance Admin']:
+        return jsonify({"message": "Finance Admin privileges required"}), 403
+
+    # Load all transactions, joined with User to get business name
+    # We order by created_at descending so newest are first
+    transactions = CreditTransaction.query.order_by(CreditTransaction.created_at.desc()).all()
+    
+    tx_list = []
+    for tx in transactions:
+        business_owner = User.query.get(tx.user_id)
+        
+        tx_list.append({
+            "id": tx.id,
+            "reference_id": tx.reference_id,
+            "amount": float(tx.amount),
+            "description": tx.description,
+            "transaction_type": tx.transaction_type,
+            "created_at": tx.created_at.isoformat() if tx.created_at else None,
+            "business_name": business_owner.business_name if business_owner else "Deleted User",
+            "email": business_owner.email if business_owner else "Unknown"
+        })
+        
+    return jsonify({
+        "status": "success",
+        "data": tx_list
+    }), 200
