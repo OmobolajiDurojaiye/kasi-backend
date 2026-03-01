@@ -38,3 +38,13 @@ test_*.py
 dist/
 build/
 *.egg-info/
+
+# One-off database migration scripts
+add_admin_columns.py
+add_admin_role.py
+alter_status.py
+create_announcements.py
+create_credits_schema.py
+create_services_schema.py
+patch_admin_schema.py
+test_schedule_api.py
