@@ -115,3 +115,22 @@ class Integration(db.Model):
             'connection_status': self.connection_status,
             'created_at': self.created_at.isoformat()
         }
+
+class WaitlistEntry(db.Model):
+    __tablename__ = 'waitlist_entries'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(150), nullable=False)
+    email = db.Column(db.String(150), nullable=False, unique=True)
+    phone_number = db.Column(db.String(50), nullable=False)
+    instagram_handle = db.Column(db.String(100), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'email': self.email,
+            'phone_number': self.phone_number,
+            'instagram_handle': self.instagram_handle,
+            'created_at': self.created_at.isoformat() if self.created_at else None
+        }

@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify
 from app.extensions import db, jwt
-from .models import User
+from .models import User, WaitlistEntry
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
 
 auth_bp = Blueprint('auth', __name__)
@@ -39,6 +39,52 @@ def login():
         }), 200
         
     return jsonify({"message": "Invalid credentials"}), 401
+
+@auth_bp.route('/users/<int:user_id>/subscription', methods=['GET'])
+def get_user_subscription(user_id):
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"message": "User not found"}), 404
+    # MVP: Mock explicit tiers, can be refined based on kasi_credits later
+    return jsonify({
+        "status": "success",
+        "data": {
+            "tier": "Free",
+            "kasi_credits": user.kasi_credits,
+            "can_access_advanced_ai": False
+        }
+    }), 200
+
+@auth_bp.route('/waitlist', methods=['POST'])
+def join_waitlist():
+    data = request.get_json()
+    
+    email = data.get('email')
+    name = data.get('name')
+    phone = data.get('phone_number')
+    ig_handle = data.get('instagram_handle')
+    
+    if not email or not name or not phone:
+        return jsonify({"message": "Name, email, and phone number are required"}), 400
+        
+    existing = WaitlistEntry.query.filter_by(email=email).first()
+    if existing:
+        return jsonify({"message": "We already have you on the waitlist! We'll reach out soon."}), 200
+        
+    new_entry = WaitlistEntry(
+        name=name,
+        email=email,
+        phone_number=phone,
+        instagram_handle=ig_handle
+    )
+    
+    try:
+        db.session.add(new_entry)
+        db.session.commit()
+        return jsonify({"message": "Successfully joined the WhatsApp Beta waitlist!"}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"message": "An error occurred while joining the waitlist."}), 500
 
 @auth_bp.route('/me', methods=['GET'])
 @jwt_required()

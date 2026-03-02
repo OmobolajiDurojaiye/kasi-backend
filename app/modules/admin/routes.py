@@ -4,7 +4,7 @@ from app.extensions import db
 from sqlalchemy import func
 from datetime import datetime, timedelta
 
-from app.modules.auth.models import User, Announcement, CreditTransaction
+from app.modules.auth.models import User, Announcement, CreditTransaction, WaitlistEntry
 from app.modules.invoices.models import Invoice, Customer
 from app.modules.products.models import Product
 
@@ -405,3 +405,15 @@ def get_admin_transactions():
         "status": "success",
         "data": tx_list
     }), 200
+
+@admin_bp.route('/waitlist', methods=['GET'])
+@jwt_required()
+def get_admin_waitlist():
+    user_id = get_jwt_identity()
+    user = User.query.get(user_id)
+    
+    if not user or not user.is_admin:
+        return jsonify({"message": "Admin privileges required"}), 403
+
+    entries = WaitlistEntry.query.order_by(WaitlistEntry.created_at.desc()).all()
+    return jsonify([e.to_dict() for e in entries]), 200
