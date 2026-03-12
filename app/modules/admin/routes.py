@@ -417,3 +417,53 @@ def get_admin_waitlist():
 
     entries = WaitlistEntry.query.order_by(WaitlistEntry.created_at.desc()).all()
     return jsonify([e.to_dict() for e in entries]), 200
+
+@admin_bp.route('/audit-logs', methods=['GET'])
+@jwt_required()
+def get_admin_audit_logs():
+    user_id = get_jwt_identity()
+    user = User.query.get(user_id)
+    
+    if not user or not user.is_admin:
+        return jsonify({"message": "Admin privileges required"}), 403
+        
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 50, type=int) # Admins see more at once
+    action_filter = request.args.get('action')
+    
+    from app.modules.auth.models import AuditLog
+    
+    query = AuditLog.query.order_by(AuditLog.created_at.desc())
+    
+    if action_filter:
+        query = query.filter(AuditLog.action.ilike(f"%{action_filter}%"))
+        
+    pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+    
+    logs_data = []
+    for log in pagination.items:
+        # Fetch associated user for admin visibility
+        log_user = log.user
+        user_info = None
+        if log_user:
+            user_info = {
+                 "id": log_user.id,
+                 "email": log_user.email,
+                 "business_name": log_user.business_name
+            }
+            
+        logs_data.append({
+            'id': log.id,
+            'user': user_info,
+            'action': log.action,
+            'resource_details': log.resource_details,
+            'ip_address': log.ip_address,
+            'created_at': log.created_at.isoformat()
+        })
+        
+    return jsonify({
+        'logs': logs_data,
+        'total': pagination.total,
+        'pages': pagination.pages,
+        'current_page': page
+    }), 200

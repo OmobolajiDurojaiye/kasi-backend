@@ -36,8 +36,41 @@ class SalesAI:
         if not sender_name:
             sender_name = f"{platform.capitalize()} Customer"
 
+        # ── Capture CRM Context (Purchase History) ──────────────
+        customer = Customer.query.filter_by(user_id=user_id, name=sender_name).first()
+        customer_context = None
+        if customer:
+            invoices = Invoice.query.filter_by(customer_id=customer.id).filter(Invoice.status.in_(['Paid', 'Pending'])).all()
+            if invoices:
+                total_spent = sum(inv.total_amount for inv in invoices if inv.status == 'Paid')
+                orders_count = len(invoices)
+                
+                past_items = set()
+                for inv in invoices:
+                    items = InvoiceItem.query.filter_by(invoice_id=inv.id).all()
+                    for it in items:
+                        if it.description:
+                            past_items.add(it.description)
+                
+                if orders_count > 0:
+                    past_items_str = ", ".join(list(past_items)[:10])
+                    customer_context = (
+                        f"Customer Name: {sender_name} | "
+                        f"Total Lifetime Orders: {orders_count} | "
+                        f"Total Amount Spent: ₦{total_spent:,.0f} | "
+                        f"Past Items Bought: {past_items_str}"
+                    )
+
         # ── Try Groq AI first ───────────────────────────────────────────
-        intent_data = SalesAI._classify_with_ai(text, products=products, services=services, availabilities=availabilities, user_id=user_id, customer_id=customer_id)
+        intent_data = SalesAI._classify_with_ai(
+            text, 
+            products=products, 
+            services=services, 
+            availabilities=availabilities, 
+            user_id=user_id, 
+            customer_id=customer_id,
+            customer_context=customer_context
+        )
 
         if intent_data:
             return SalesAI._dispatch_ai_intent(
@@ -52,7 +85,7 @@ class SalesAI:
     # ── AI classification ───────────────────────────────────────────────
 
     @staticmethod
-    def _classify_with_ai(text, products=None, services=None, availabilities=None, user_id=None, customer_id=None):
+    def _classify_with_ai(text, products=None, services=None, availabilities=None, user_id=None, customer_id=None, customer_context=None):
         """Try Groq AI for intent classification."""
         try:
             from app.services.groq_service import GroqService
@@ -62,7 +95,8 @@ class SalesAI:
                 services=services, 
                 availabilities=availabilities, 
                 user_id=user_id, 
-                customer_id=customer_id
+                customer_id=customer_id,
+                customer_context=customer_context
             )
         except Exception as e:
             print(f"[SalesAI] AI unavailable, using regex: {e}")

@@ -1,11 +1,13 @@
 from flask import Blueprint, request, jsonify
-from app.extensions import db, jwt
+from app.extensions import db, jwt, limiter
 from .models import User, WaitlistEntry
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
+from app.services.security_service import AuditService
 
 auth_bp = Blueprint('auth', __name__)
 
 @auth_bp.route('/register', methods=['POST'])
+@limiter.limit("3 per minute")
 def register():
     data = request.get_json()
     
@@ -24,6 +26,7 @@ def register():
     return jsonify({"message": "User registered successfully"}), 201
 
 @auth_bp.route('/login', methods=['POST'])
+@limiter.limit("5 per minute")
 def login():
     data = request.get_json()
     user = User.query.filter_by(email=data['email']).first()
@@ -33,6 +36,10 @@ def login():
             return jsonify({"message": f"Account is {user.account_status}. Please contact support."}), 403
             
         access_token = create_access_token(identity=str(user.id))
+        
+        # Log successful login
+        AuditService.log_action(user.id, "LOGIN", "User logged in via frontend")
+        
         return jsonify({
             "access_token": access_token,
             "user": user.to_dict()
@@ -126,6 +133,10 @@ def update_profile():
         user.ai_instructions = data['ai_instructions']
         
     db.session.commit()
+    
+    # Log profile update
+    AuditService.log_action(current_user_id, "PROFILE_UPDATE", data)
+    
     return jsonify(user.to_dict()), 200
 
 import os
@@ -197,3 +208,35 @@ def get_active_announcement():
     if active:
         return jsonify({"status": "success", "data": active.to_dict()}), 200
     return jsonify({"status": "success", "data": None}), 200
+
+@auth_bp.route('/audit-logs', methods=['GET'])
+@jwt_required()
+def get_audit_logs():
+    current_user_id = get_jwt_identity()
+    
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 15, type=int)
+    
+    from app.modules.auth.models import AuditLog
+    
+    # Query logs for this user, descending Order
+    pagination = AuditLog.query.filter_by(user_id=current_user_id)\
+        .order_by(AuditLog.created_at.desc())\
+        .paginate(page=page, per_page=per_page, error_out=False)
+        
+    logs_data = []
+    for log in pagination.items:
+        logs_data.append({
+            'id': log.id,
+            'action': log.action,
+            'resource_details': log.resource_details,
+            'ip_address': log.ip_address,
+            'created_at': log.created_at.isoformat()
+        })
+        
+    return jsonify({
+        'logs': logs_data,
+        'total': pagination.total,
+        'pages': pagination.pages,
+        'current_page': page
+    }), 200

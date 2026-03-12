@@ -5,6 +5,7 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from datetime import datetime
 from app.services.pdf_service import PDFService
+from app.services.security_service import AuditService
 
 invoices_bp = Blueprint('invoices', __name__)
 
@@ -65,6 +66,9 @@ def create_invoice():
         print(f"Error generating PDF: {e}")
 
     db.session.commit()
+    
+    AuditService.log_action(current_user_id, "INVOICE_CREATED", {"invoice_id": new_invoice.id, "customer_name": new_invoice.customer.name, "total_amount": new_invoice.total_amount, "status": new_invoice.status})
+    
     return jsonify(new_invoice.to_dict()), 201
 
 @invoices_bp.route('/', methods=['GET'])
@@ -90,6 +94,8 @@ def delete_invoice(id):
     db.session.delete(invoice)
     db.session.commit()
     
+    AuditService.log_action(current_user_id, "INVOICE_DELETED", {"invoice_id": id, "reference": invoice.reference})
+    
     return jsonify({'message': 'Invoice deleted successfully'}), 200
 
 @invoices_bp.route('/<int:id>', methods=['PATCH'])
@@ -100,7 +106,12 @@ def update_invoice(id):
     data = request.get_json()
     
     if 'status' in data:
+        old_status = invoice.status
         invoice.status = data['status']
+        if old_status != invoice.status and invoice.status == 'Paid':
+             AuditService.log_action(current_user_id, "INVOICE_PAID", {"invoice_id": id, "reference": invoice.reference, "amount_paid": invoice.total_amount})
+        elif old_status != invoice.status:
+             AuditService.log_action(current_user_id, "INVOICE_STATUS_CHANGED", {"invoice_id": id, "reference": invoice.reference, "new_status": invoice.status})
         
     db.session.commit()
     return jsonify(invoice.to_dict()), 200

@@ -1,8 +1,9 @@
 from flask import Blueprint, jsonify, request
-from app.extensions import db
+from app.extensions import db, limiter
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.modules.auth.models import User, CreditTransaction
 from app.services.paystack_service import PaystackService
+from app.services.security_service import AuditService, require_idempotency
 from datetime import datetime
 import uuid
 
@@ -40,7 +41,9 @@ def get_packages():
     return jsonify(CREDIT_PACKAGES), 200
 
 @billing_bp.route('/initialize-topup', methods=['POST'])
+@limiter.limit("10 per minute") # Also rate limit this endpoint
 @jwt_required()
+@require_idempotency
 def initialize_topup():
     """Trigger Paystack to generate a checkout session for purchasing credits."""
     current_user_id = get_jwt_identity()
@@ -69,6 +72,7 @@ def initialize_topup():
     )
     
     if qt_res and qt_res.get('status'):
+        AuditService.log_action(user.id, "TOPUP_INITIALIZED", {"package": package_id, "amount": amount, "reference": reference})
         return jsonify({
             'authorization_url': qt_res['data']['authorization_url'],
             'reference': reference,
@@ -79,6 +83,7 @@ def initialize_topup():
 
 @billing_bp.route('/verify-topup', methods=['POST'])
 @jwt_required()
+@require_idempotency
 def verify_topup():
     """Verify Paystack transaction and award Kasi Credits."""
     current_user_id = get_jwt_identity()
@@ -115,6 +120,8 @@ def verify_topup():
         
         db.session.add(log)
         db.session.commit()
+        
+        AuditService.log_action(user.id, "TOPUP_VERIFIED_SUCCESS", {"package": package_id, "credits_added": package['credits'], "reference": reference})
         
         return jsonify({
             'message': 'Top-up successful!',

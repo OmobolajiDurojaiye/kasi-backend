@@ -9,9 +9,10 @@ def create_app(config_class=Config):
     # Initialize extensions
     db.init_app(app)
     cors.init_app(app)
-    from .extensions import jwt, migrate
+    from .extensions import jwt, migrate, limiter
     jwt.init_app(app)
     migrate.init_app(app, db)
+    limiter.init_app(app)
 
     # Register Blueprints
     from .modules.health.routes import health_bp

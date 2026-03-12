@@ -104,7 +104,7 @@ class GroqService:
     _CONVERSATION_HISTORY = {}
 
     @classmethod
-    def classify_intent(cls, message, products=None, services=None, availabilities=None, user_id=None, customer_id=None):
+    def classify_intent(cls, message, products=None, services=None, availabilities=None, user_id=None, customer_id=None, customer_context=None):
         _GROQ_KEY = os.getenv("GROQ_API_KEY")
         if not _GROQ_KEY:
             return None
@@ -162,6 +162,11 @@ class GroqService:
                     catalog += f"- {days[a.day_of_week]}: CLOSED\n"
         else:
             catalog += "No schedule provided. Assume 9 AM to 5 PM Mon-Fri.\n"
+
+        if customer_context:
+            catalog += "\n## CRM KNOWLEDGE ABOUT THIS CUSTOMER (USE THIS TO PERSONALIZE YOUR RESPONSE):\n"
+            catalog += f"{customer_context}\n"
+            catalog += "Instructions: Acknowledge them warmly as a returning customer if they have past orders. If they mention buying something again, check their 'Past Items Bought' to know exactly what they mean and mention it by name! (e.g., 'Welcome back! Do you want another [Item] like last time?')\n"
 
         user_prompt = f"{catalog}{merchant_rules}\n---\nCustomer message: \"{message}\""
 

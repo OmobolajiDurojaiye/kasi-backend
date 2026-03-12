@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.extensions import db
 from app.modules.services.models import Service, Availability, Booking
+from app.services.security_service import AuditService
 from datetime import datetime
 
 services_bp = Blueprint('services', __name__)
@@ -35,6 +36,8 @@ def create_service():
     )
     db.session.add(service)
     db.session.commit()
+    
+    AuditService.log_action(user_id, "SERVICE_CREATED", {"service_id": service.id, "name": service.name, "price": service.price})
     
     return jsonify(service.to_dict()), 201
 
@@ -76,6 +79,9 @@ def delete_service(service_id):
         
     db.session.delete(service)
     db.session.commit()
+    
+    AuditService.log_action(user_id, "SERVICE_DELETED", {"service_id": service_id, "name": service.name})
+    
     return jsonify({'message': 'Service deleted'}), 200
 
 # --- AVAILABILITY endpoints ---

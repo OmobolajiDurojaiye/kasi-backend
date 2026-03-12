@@ -134,3 +134,23 @@ class WaitlistEntry(db.Model):
             'instagram_handle': self.instagram_handle,
             'created_at': self.created_at.isoformat() if self.created_at else None
         }
+
+class IdempotencyKey(db.Model):
+    __tablename__ = 'idempotency_keys'
+    id = db.Column(db.Integer, primary_key=True)
+    key = db.Column(db.String(100), unique=True, nullable=False, index=True)
+    response_code = db.Column(db.Integer, nullable=False)
+    response_body = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class AuditLog(db.Model):
+    __tablename__ = 'audit_logs'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True) # Optional, mostly track logged in user
+    action = db.Column(db.String(100), nullable=False)
+    resource_details = db.Column(db.Text, nullable=True) # JSON dump of what changed
+    ip_address = db.Column(db.String(50), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    user = db.relationship('User', backref=db.backref('audit_logs', lazy=True))

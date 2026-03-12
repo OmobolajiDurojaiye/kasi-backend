@@ -4,6 +4,7 @@ from flask import Blueprint, request, jsonify, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.extensions import db
 from .models import Product
+from app.services.security_service import AuditService
 
 products_bp = Blueprint('products', __name__)
 
@@ -42,6 +43,9 @@ def create_product():
     )
     db.session.add(product)
     db.session.commit()
+    
+    AuditService.log_action(user_id, "PRODUCT_CREATED", {"product_id": product.id, "name": product.name, "price": product.price})
+    
     return jsonify(product.to_dict()), 201
 
 
@@ -81,6 +85,9 @@ def delete_product(product_id):
 
     db.session.delete(product)
     db.session.commit()
+    
+    AuditService.log_action(user_id, "PRODUCT_DELETED", {"product_id": product_id, "name": product.name})
+    
     return jsonify({"message": "Product deleted"}), 200
 
 
