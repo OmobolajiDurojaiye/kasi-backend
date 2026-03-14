@@ -1,5 +1,5 @@
 """
-SalesAI — Unified conversational sales engine.
+Kasi AI — Unified conversational sales engine.
 Handles greetings, price inquiries, negotiation, multi-item orders,
 and common phrases (thank you, help, etc.).
 Used by both WebhookService and TelegramService.
